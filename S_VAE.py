@@ -56,11 +56,7 @@ class SdA(object):
         self.rng = theano.tensor.shared_randomstreams.RandomStreams(numpy_rng.randint(2 ** 30))
 
         assert self.n_layers > 0
-#        if not theano_rng:
-#            theano_rng = RandomStreams(numpy_rng.randint(2 ** 30))
 
-        # allocate symbolic variables for the data
-        # the data is presented as rasterized images
         self.x = T.matrix('x')
 
         for i in range(self.n_layers):
@@ -116,13 +112,13 @@ class SdA(object):
             else:
                 output_size =  n_ins
 
-            if (i==self.n_layers-1):  #the first layer in decoder
+            if (i==self.n_layers-1): 
                 layer_input = sample_z
                 decoder_layer = HiddenLayer(rng = numpy_rng,
                                         input   = layer_input,
                                         n_in    = input_size,
                                         n_out   = output_size,
-                                        activation = T.tanh)   #may be linear
+                                        activation = T.tanh)  
                 self.decoder.append(decoder_layer)
                 self.params.extend(decoder_layer.params)
             else:
@@ -147,18 +143,11 @@ class SdA(object):
         self.lamda = 1.0
 
         self.recon = (((self.x - z)**2).mean(1)).mean()
-        """When compute a constant together with theano variable, it will be converted
-        into the same shape as the theano variable. We may compute mean over features
-        of each example instead of sum. This is to avoid the difference in dimension of
-        each data. Default lamda = 0.01, alpha = 1e-8"""
 
         alpha = self.alpha
         self.KL    = T.mean((0.5/alpha)*T.mean(T.exp(z_var) + z_mu**2 - alpha - alpha * z_var + alpha*T.log(alpha), 1))
-#        self.end2end_cost = self.recon + self.lamda*T.log10(self.KL+1)
-        self.end2end_cost = self.recon + self.KL
         
-        #Experiment: lamda = 0.05; alpha = 1e-8    1
-        #mean(1) is within example, mean(0) is within each feature
+        self.end2end_cost = self.recon + self.KL        
 
     "**************************** Sample z ***********************************"
     def sample_z(self, mu, log_var):
@@ -181,9 +170,9 @@ class SdA(object):
     def Recon_KL_loss_batch(self, train_x, batch_size):
 
         index = T.lscalar('index')
-        # begining of a batch, given `index`
+        
         batch_begin = index * batch_size
-        # ending of a batch given `index`
+       
         batch_end = batch_begin + batch_size
         KL1 = self.lamda*T.log10(self.KL+1)
         loss_com = theano.function([index],
@@ -368,15 +357,15 @@ def test_SdA(pre_lr=0.01, end2end_lr=1e-4, algo = 'sgd',
              batch_size=10, hidden_sizes = [1,1,1],
              patience = 1, validation = 1):
 
-    numpy_rng = numpy.random.RandomState(89677)     # numpy random generator 89677
-    train_X, test_X, actual = dataset               # dataset is already normalised
+    numpy_rng = numpy.random.RandomState(89677)    
+    train_X, test_X, actual = dataset               
 
-    input_size = train_X.get_value().shape[1]       # input size = dimension
-    train_x    = train_X.get_value()[n_validate:]   # 80% for pre-training, 20% for validation
+    input_size = train_X.get_value().shape[1]      
+    train_x    = train_X.get_value()[n_validate:]   
     n_train_batches   = train_x.shape[0]
-    n_train_batches //= batch_size                  # number of batches for pre-training
+    n_train_batches //= batch_size                 
 
-    # construct the stacked denoising autoencoder class
+    
     sda = SdA(numpy_rng = numpy_rng, n_ins = input_size,
               hidden_layers_sizes = hidden_sizes)
 
@@ -394,32 +383,32 @@ def Main_Test():
 
     list_data = ["CTU13_10"]
     
-    norm         = "maxabs"            # standard, maxabs[-1,1] or minmax[0,1]
+    norm         = "maxabs"           
 
     print ("+ VAE: 0.05, Group")
     print ("+ Data: ", list_data)
     print ("+ Scaler: ", norm)
 
-    AUC_Hidden = np.empty([0,10])     #store auc of all hidden data
-    num = 0                           #a counter
+    AUC_Hidden = np.empty([0,10])     
+    num = 0                          
     for data in list_data:
         num = num + 1
 
-        h_sizes = hyper_parameters(data)                   #Load hyper-parameters
-        train_set, test_set, actual = load_data(data)      #load original data
+        h_sizes = hyper_parameters(data)                  
+        train_set, test_set, actual = load_data(data)     
 
         train_X, test_X = normalize_data(train_set, test_set, norm)  #Normalize data
 
         train_X = theano.shared(numpy.asarray(train_X, dtype=theano.config.floatX), borrow=True)
         test_X  = theano.shared(numpy.asarray(test_X,  dtype=theano.config.floatX), borrow=True)
 
-        datasets = [(train_X), (test_X), (actual)]          #Pack data for training AE
+        datasets = [(train_X), (test_X), (actual)]          
 
-        in_dim   = train_set.shape[1]                       #dimension of input data
-        n_vali   = (int)(train_set.shape[0]/5)              #size of validation set
-        n_train  = len(train_set) - n_vali                  #size of training set
-        #batch    = int(n_train/20)                           #Training set will be split training set into 20 batches
-                                                    #print data information
+        in_dim   = train_set.shape[1]                       
+        n_vali   = (int)(train_set.shape[0]/5)              
+        n_train  = len(train_set) - n_vali                 
+        #batch    = int(n_train/20)                         
+                                                    
         pat, val, batch, n_batch = stopping_para_vae(n_train)
 
         print ("\n" + str(num) + ".", data, "..." )
@@ -431,9 +420,8 @@ def Main_Test():
         print(" + Patience: %5.0d, Validate: %5.0d,  \n + Batch size: %5.0d, n batch:%5.0d"\
              %(pat, val, batch, n_batch))
 
-                               #adadelta, 'adagrad' 'adam''esgd' 'nag''rmsprop' 'rprop' 'sgd'
-        #if (num==1):
-        sda, re = test_SdA(pre_lr       = 1e-2,            #re = [stop_ep, vm, tm]
+                               
+        sda, re = test_SdA(pre_lr       = 1e-2,            
                                    end2end_lr   = 1e-4,
                                    algo         = 'adadelta',
                                    dataset      = datasets,
