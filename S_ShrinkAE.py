@@ -28,7 +28,6 @@ from stopping_para import stopping_para_shrink, stopping_para_shrink_same_batch
 
 path = "D:/Python_code/SDA-02/Results/Exp_Hidden/"
 
-#Check whether weights matrix is updated or not
 def check_weight_update(sda):
     np.set_printoptions(precision=4, suppress=True)
     "Check whether weights matrix is updated or not"
@@ -61,8 +60,6 @@ class SdA(object):
 
         "*************** Encoder **************************"
         for i in range(self.n_layers):
-            # the size of the input is either the number of hidden units of
-            # the layer below or the input size if we are on the first layer
             if i == 0:
                 input_size = n_ins
                 layer_input = self.x
@@ -70,8 +67,7 @@ class SdA(object):
                 input_size = hidden_layers_sizes[i - 1]
                 layer_input = self.encoder[-1].output
             act_function = T.tanh
-            # the input to this layer is either the activation of the hidden
-            # layer below or the input of the SdA if you are on the first layer
+
             encoder_layer = HiddenLayer(rng=numpy_rng,
                                     input       = layer_input,
                                     n_in        = input_size,
@@ -84,11 +80,11 @@ class SdA(object):
             """Construct a dAE that shared weights with this layer"""
             dA_layer = dA(numpy_rng = numpy_rng,
                           theano_rng = theano_rng,
-                          #input = layer_input,                #if use early-stopping for pre-train, it is disable
+                          #input = layer_input,                
                           n_visible = input_size,
                           n_hidden  = hidden_layers_sizes[i],
                           W         = encoder_layer.W,
-                          bhid      = encoder_layer.b)             #bvis: will be create dA itself
+                          bhid      = encoder_layer.b)             
 
             self.dA_layers.append(dA_layer)
             #dA will not initialize wieghts and bias
@@ -127,7 +123,6 @@ class SdA(object):
         self.recon = (((self.x - z)**2).mean(1)).mean()
         self.end2end_cost = self.recon + self.shrink
 
-        #mean(1) is within example, mean(0) is within each feature
 
     "****** Error on train_x and valid_x before optimization process **********"
     def Loss_train_valid(self, train_x, valid_x):
@@ -184,7 +179,7 @@ class SdA(object):
         hidden_data = theano.function([index],
                                       outputs = self.encoder[-1].output,
                                       givens={self.x: data_set[index : data_size]})
-        #Get hidden_data from Autoencoder is the same getting data from the last
+
         return hidden_data(0)
 
     #Get hidden data from hidden layer i-th for pre-training
@@ -195,7 +190,7 @@ class SdA(object):
         hidden_data = theano.function([index],
                                       outputs = self.encoder[i].output,
                                       givens={self.x: data_set[index : data_size]})
-        #Get hidden_data from Autoencoder is the same getting data from the last
+
         return hidden_data(0)
 
     "Get data from the output of Autoencoder"
@@ -313,19 +308,19 @@ def test_SdA(pre_lr=0.01, end2end_lr=1e-4, algo = 'sgd',
              batch_size=10, hidden_sizes = [1,1,1],
              patience = 1, validation = 1):
 
-    numpy_rng = numpy.random.RandomState(89677)   # numpy random generator 89677
-    train_X, test_X, actual = dataset             # dataset is already normalised
+    numpy_rng = numpy.random.RandomState(89677)   
+    train_X, test_X, actual = dataset             
 
-    input_size = train_X.get_value().shape[1]     # input size = dimension
-    train_x    = train_X.get_value()[n_validate:]   # 80% for pre-training, 20% for validation
+    input_size = train_X.get_value().shape[1]     
+    train_x    = train_X.get_value()[n_validate:]   
     n_train_batches   = train_x.shape[0]
-    n_train_batches //= batch_size                  # number of batches for pre-training
+    n_train_batches //= batch_size                  
 
     # construct the stacked denoising autoencoder class
     sda = SdA(numpy_rng = numpy_rng, n_ins = input_size,
               hidden_layers_sizes = hidden_sizes)
 
-    #check_weight_update(sda)    #Check whether weights matrix is updated or not
+   
     RE = sda.End2end_Early_stopping(numpy_rng, dataset, n_validate, data_name,
                                batch_size, end2end_lr, algo, norm, patience, validation)
 
@@ -348,25 +343,23 @@ def Main_Test():
     print ("+ Data: ", list_data)
     print ("+ Scaler: ", norm)
 
-    AUC_Hidden = np.empty([0,10])     #store auc of all hidden data
+    AUC_Hidden = np.empty([0,10])    
     num = 0
     for data in list_data:
         num = num + 1
-        h_sizes = hyper_parameters(data)                   #Load hyper-parameters
+        h_sizes = hyper_parameters(data)                   
 
-        train_set, test_set, actual = load_data(data)      #load original data
-        train_X, test_X = normalize_data(train_set, test_set, norm)  #Normalize data
+        train_set, test_set, actual = load_data(data)      
+        train_X, test_X = normalize_data(train_set, test_set, norm) 
 
         train_X = theano.shared(numpy.asarray(train_X, dtype=theano.config.floatX), borrow=True)
         test_X  = theano.shared(numpy.asarray(test_X,  dtype=theano.config.floatX), borrow=True)
 
-        datasets = [(train_X), (test_X), (actual)]          #Pack data for training AE
-
-        in_dim   = train_set.shape[1]                       #dimension of input data
-        n_vali   = (int)(train_set.shape[0]/5)              #size of validation set
-        n_train  = len(train_set) - n_vali                  #size of training set
-        #batch     = int(n_train/20)                          #Training set will be split training set into 20 batches
-
+        datasets = [(train_X), (test_X), (actual)]          
+        in_dim   = train_set.shape[1]                       
+        n_vali   = (int)(train_set.shape[0]/5)              
+        n_train  = len(train_set) - n_vali                  
+        #batch     = int(n_train/20)                          
         pat, val, batch, n_batch = stopping_para_shrink(n_train)
 
 
@@ -380,8 +373,6 @@ def Main_Test():
 
 #        AUC_RE   = np.empty([0,10])
 
-                               #adadelta, 'adagrad' 'adam''esgd' 'nag''rmsprop' 'rprop' 'sgd'
-#        if (num==1):
         sda, re = test_SdA(pre_lr       = 1e-2,              #re = [stop_ep, vm, tm]
                             end2end_lr   = 1e-4,
                             algo         = 'adadelta',
