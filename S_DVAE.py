@@ -15,7 +15,7 @@ import numpy
 
 from mlp import HiddenLayer
 from dA import dA
-#from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
+
 
 from ProcessingData import load_data, normalize_data
 from Methods import auc_density, auc_AEbased
@@ -53,22 +53,15 @@ class SdA(object):
         self.params  = []
         self.n_layers = len(hidden_layers_sizes)
 
-        """set seed one time per dataset, rng will randomly generate different
-        number in each mini_batch_size and, different in each epoch. This is
-        repetive the same number when we create new SdA object. See theano_rondom.py"""
+
         self.rng = theano.tensor.shared_randomstreams.RandomStreams(numpy_rng.randint(2 ** 30))
 
         assert self.n_layers > 0
-#        if not theano_rng:
-#            theano_rng = RandomStreams(numpy_rng.randint(2 ** 30))
 
-        # allocate symbolic variables for the data
-        # the data is presented as rasterized images
         self.x = T.matrix('x')
 
         for i in range(self.n_layers):
-            # the size of the input is either the number of hidden units of
-            # the layer below or the input size if we are on the first layer
+
             if (i == 0):
                 input_size  = n_ins
                 layer_input = self.x
@@ -119,13 +112,13 @@ class SdA(object):
             else:
                 output_size =  n_ins
 
-            if (i==self.n_layers-1):  #the first layer in decoder
+            if (i==self.n_layers-1):  
                 layer_input = sample_z
                 decoder_layer = HiddenLayer(rng = numpy_rng,
                                         input   = layer_input,
                                         n_in    = input_size,
                                         n_out   = output_size,
-                                        activation = T.tanh)   #may be linear
+                                        activation = T.tanh) 
                 self.decoder.append(decoder_layer)
                 self.params.extend(decoder_layer.params)
             else:
@@ -150,17 +143,12 @@ class SdA(object):
         self.lamda = 0.05
 
         self.recon = (((self.x - y)**2).mean(1)).mean()
-        """When compute a constant together with theano variable, it will be converted
-        into the same shape as the theano variable. We may compute mean over features
-        of each example instead of sum. This is to avoid the difference in dimension of
-        each data. Default lamda = 0.05, alpha = 1e-8"""
+
 
         alpha = self.alpha
         self.KL    = T.mean((0.5/alpha)*T.mean(T.exp(z_var) + z_mu**2 - alpha - alpha * z_var + alpha*T.log(alpha), 1))
         self.end2end_cost = self.recon + self.lamda*T.log10(self.KL+1)
 
-        #Experiment: lamda = 0.05; alpha = 1e-8    1
-        #mean(1) is within example, mean(0) is within each feature
         
     "**************************** Sample z ***********************************"
     def sample_z(self, mu, log_var):
@@ -282,9 +270,9 @@ class SdA(object):
 
     "********************* Compute AUC on hidden data *************************"
     def Compute_AUC_Hidden(self, train_set, test_set, actual, norm, data_name):
-        z_train = self.get_hidden_data(train_set)           #get hidden values
-        z_test  = self.get_hidden_data(test_set)            #get hidden values
-        y_test  = self.get_output_data(test_set)            #get prediction values
+        z_train = self.get_hidden_data(train_set)           
+        z_test  = self.get_hidden_data(test_set)            
+        y_test  = self.get_output_data(test_set)            
         "Compute performance of classifiers on latent data"
         lof, cen, dis, kde, svm05, svm01 = auc_density(z_train, z_test, actual, norm)
         ae                               = auc_AEbased(test_set.get_value(), y_test, actual)
@@ -299,8 +287,8 @@ class SdA(object):
 
     "**************************************************************************"
     def Save_Hidden_Data_Size(self, train_set, test_set, data_name, size, path):
-        z_train = self.get_hidden_data(train_set)      #get hidden values
-        z_test  = self.get_hidden_data(test_set)       #get hidden values
+        z_train = self.get_hidden_data(train_set)     
+        z_test  = self.get_hidden_data(test_set)      
         np.savetxt(path + "data/"+ data_name + "_train_z_" + str(size)+ ".csv", z_train, delimiter=",", fmt='%f' )
         np.savetxt(path + "data/"+ data_name + "_test_z_" + str(size)+ ".csv" ,  z_test, delimiter=",", fmt='%f' )
 
@@ -316,7 +304,7 @@ class SdA(object):
         v = theano.shared(numpy.asarray(valid_x, dtype=theano.config.floatX), borrow=True)
 
         "Training network by downhill"
-        #'adadelta' 'adagrad (default 0.01)' 'adam''esgd' 'nag''rmsprop' 'rprop' 'sgd'
+
         opt = downhill.build(algo = algo, params= self.params, loss = self.end2end_cost, inputs = [self.x])
         train = downhill.Dataset(train_x, batch_size = batch_size, rng = numpy_rng)
         valid = downhill.Dataset(valid_x, batch_size = len(valid_x), rng = numpy_rng)
@@ -415,32 +403,30 @@ def Main_Test():
         
     list_data =  ["CTU13_10"]
 
-    norm         = "maxabs"            # standard, maxabs[-1,1] or minmax[0,1]
+    norm         = "maxabs"           
 
     print ("+ DVAE: 0.05")
     print ("+ Data: ", list_data)
     print ("+ Scaler: ", norm)
 
-    AUC_Hidden = np.empty([0,10])     #store auc of all hidden data
-    num = 0                           #a counter
+    AUC_Hidden = np.empty([0,10])    
+    num = 0                           
     for data in list_data:
         num = num + 1
 
-        h_sizes = hyper_parameters(data)                   #Load hyper-parameters
-        train_set, test_set, actual = load_data(data)      #load original data
+        h_sizes = hyper_parameters(data)                 
+        train_set, test_set, actual = load_data(data)      
 
-        train_X, test_X = normalize_data(train_set, test_set, norm)  #Normalize data
+        train_X, test_X = normalize_data(train_set, test_set, norm) 
 
         train_X = theano.shared(numpy.asarray(train_X, dtype=theano.config.floatX), borrow=True)
         test_X  = theano.shared(numpy.asarray(test_X,  dtype=theano.config.floatX), borrow=True)
 
-        datasets = [(train_X), (test_X), (actual)]          #Pack data for training AE
-
-        in_dim   = train_set.shape[1]                       #dimension of input data
-        n_vali   = (int)(train_set.shape[0]/5)              #size of validation set
-        n_train  = len(train_set) - n_vali                  #size of training set
-        #batch    = int(n_train/20)                           #Training set will be split training set into 20 batches
-                                                    #print data information
+        datasets = [(train_X), (test_X), (actual)]          
+        in_dim   = train_set.shape[1]                       
+        n_vali   = (int)(train_set.shape[0]/5)             
+        n_train  = len(train_set) - n_vali                                         
+                                                   
         pat, val, batch, n_batch = stopping_para_vae(n_train)
 
         print ("\n" + str(num) + ".", data, "..." )
@@ -453,9 +439,8 @@ def Main_Test():
              %(pat, val, batch, n_batch))
 
         AUC_RE   = np.empty([0,10])
-                               #adadelta, 'adagrad' 'adam''esgd' 'nag''rmsprop' 'rprop' 'sgd'
-        #if (num==1):
-        sda, re = test_SdA(pre_lr       = 1e-2,            #re = [stop_ep, vm, tm]
+
+        sda, re = test_SdA(pre_lr       = 1e-2,          
                                    end2end_lr   = 1e-4,
                                    algo         = 'adadelta',
                                    dataset      = datasets,
