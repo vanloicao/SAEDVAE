@@ -413,3 +413,374 @@ def Main_Test():
 
 if __name__ == '__main__':
     Main_Test()
+
+    
+    
+"************************* Query time - Training size *************************"
+"This function is to train model on different sizes of training set"
+sizes = [500, 1000, 2000, 5000, 10000]
+list_data =  ["CTU13_09", "CTU13_13", "UNSW", "NSLKDD"]
+
+from BaseOneClass import CentroidBasedOneClassClassifier, DensityBasedOneClassClassifier
+from sklearn import svm
+from LOF import LocalOutlierFactor
+from sklearn import preprocessing
+import timeit as tm
+
+def Investigate_Querytime(list_data, sizes):
+    norm         = "maxabs"
+    corruptions  = [0.1, 0.1, 0.1]
+
+    print ("SAE 10")
+    print ("+ Data: ", list_data)
+    print ("+ Scaler: ", norm)
+    print ("+ Corruptions: ", corruptions)
+
+    num = 0
+    for data in list_data:
+        num = num + 1
+        h_sizes = hyper_parameters(data)                   #Load hyper-parameters
+        Querytime = np.empty([0,7])                      #store auc of all hidden data
+        train_set, test_set, actual = load_data(data)      #load original data
+        for size in sizes:
+
+            train_set1 = train_set[:size]
+            train_X0, test_X0 = normalize_data(train_set1, test_set, norm)  #Normalize data
+            train_X = theano.shared(numpy.asarray(train_X0, dtype=theano.config.floatX), borrow=True)
+            test_X  = theano.shared(numpy.asarray(test_X0,  dtype=theano.config.floatX), borrow=True)
+
+            datasets = [(train_X), (test_X), (actual)]          #Pack data for training AE
+
+            in_dim   = train_set1.shape[1]                       #dimension of input data
+            n_vali   = (int)(train_set1.shape[0]/5)              #size of validation set
+            n_train  = len(train_set1) - n_vali                  #size of training set
+            #batch    = 80 #int(n_train/20)                      #Training set will be split training set into 20 batches
+
+            pat, val, batch, n_batch = stopping_para_shrink_same_batch(n_train)
+
+            print ("\n" + str(num) + ".", data, "..." )
+            print (" + Hidden Sizes: ",in_dim, h_sizes, "- Batch_sizes:", batch)
+            print (" + Data: %d (%d train, %d vali) - %d normal, %d anomaly"\
+                %(len(train_set1), n_train, n_vali, \
+                len(test_set[(actual == 1)]), len(test_set[(actual == 0)])))
+
+            print(" + Patience: %5.0d, Validate: %5.0d,  \n + Batch size: %5.0d, n batch:%5.0d"\
+             %(pat, val, batch, n_batch))
+
+            AUC_RE   = np.empty([0,10])
+
+            sda, re = test_SdA(pre_lr    = 1e-2,
+                            end2end_lr   = 1e-4,
+                            algo         = 'adadelta',
+                            dataset      = datasets,
+                            data_name    = data,
+                            n_validate   = n_vali,
+                            norm         = norm,
+                            batch_size   = batch,
+                            hidden_sizes = h_sizes,
+                            corruptions  = corruptions,
+                            patience     = pat,
+                            validation   = val)
+
+            #Computer hidden data for training set
+            train_z = sda.get_hidden_data(train_X)      #get hidden values
+            bw = (train_z.shape[1]/2.0)**0.5            #default value in One-class SVM
+            gamma = 1/(2*bw*bw)
+            "************************ Training models ***********************"
+            CEN = CentroidBasedOneClassClassifier()
+            CEN.fit(train_z)
+
+            "************* MDIS & KDE  **************"
+            clf_dis = DensityBasedOneClassClassifier(bandwidth = bw,
+                                             kernel="really_linear",
+                                             metric="euclidean",
+                                             scale = norm)
+            clf_dis.fit(train_z)
+
+            KDE = DensityBasedOneClassClassifier(bandwidth = bw,
+                                         kernel="gaussian",
+                                         metric="euclidean",
+                                         scale = norm)
+            KDE.fit(train_z)
+
+
+            "************* SVM  **************"
+            scaler = preprocessing.MaxAbsScaler()
+            scaler.fit(train_z)
+            train_z1 = scaler.transform(train_z)
+
+            clf_05 = svm.OneClassSVM(nu=0.5, kernel="rbf", gamma=gamma)
+            clf_05.fit(train_z1)
+
+            clf_01 = svm.OneClassSVM(nu=0.1, kernel="rbf", gamma=gamma)
+            clf_01.fit(train_z1)
+
+            k = (int)(len(train_z1)*0.1)
+            clf_lof = LocalOutlierFactor(n_neighbors=k)
+            clf_lof.fit(train_z1)
+
+
+            "************************ Evaluate Models ************************"
+            n_test = 1000
+            n_times = 100
+            test_X01  = theano.shared(numpy.asarray(test_X0[:n_test],  dtype=theano.config.floatX), borrow=True)
+            "************* DAE ************"
+            time_dae = 0
+            time_z   = 0
+            time_scale = 0
+            time_cen = 0
+            time_dis = 0
+            time_kde = 0
+            time_svm05 = 0
+            time_svm01 = 0
+            time_lof = 0
+            for i in range(n_times):
+              start = tm.default_timer()
+              test_r  = sda.get_output_data(test_X01)       #get prediction values
+              OF = -(((test_X01 - test_r)**2).mean(1))
+              stop = tm.default_timer()
+              time_dae = time_dae + (stop - start)
+
+
+            for i in range(n_times):
+              "******* Compute test_z *******"
+              start = tm.default_timer()
+              test_z  = sda.get_hidden_data(test_X01)       #get hidden values
+              stop = tm.default_timer()
+              time_z = time_z + (stop - start)
+
+              "******* Scaler test z *******"
+              start = tm.default_timer()
+              test_z1  = scaler.transform(test_z)
+              stop = tm.default_timer()
+              time_scale = time_scale + (stop - start)
+
+
+            for i in range(n_times):
+              "************ CEN ************"
+              start = tm.default_timer()
+              CEN.get_density(test_z)
+              stop = tm.default_timer()
+              time_cen = time_cen + (stop - start)
+
+              "************ DIS ************"
+              start = tm.default_timer()
+              clf_dis.get_density(test_z)
+              stop = tm.default_timer()
+              time_dis = time_dis + (stop - start)
+
+              "************ KDE ************"
+              start = tm.default_timer()
+              KDE.get_density(test_z)
+              stop = tm.default_timer()
+              time_kde = time_kde + (stop - start)
+
+
+
+              "*********** SVM05 ***********"
+              start = tm.default_timer()
+              clf_05.decision_function(test_z1)
+              stop = tm.default_timer()
+              time_svm05 = time_svm05 + (stop - start)
+              "*********** SVM01 ***********"
+              start = tm.default_timer()
+              clf_01.decision_function(test_z1)
+              stop = tm.default_timer()
+              time_svm01 = time_svm01 + (stop - start)
+              "************ LOF ************"
+              start = tm.default_timer()
+              clf_lof._decision_function(test_z1)
+              stop = tm.default_timer()
+              time_lof = time_lof + (stop - start)
+
+            time_dae = time_dae/n_times
+            time_cen = (time_cen + time_z)/(n_times)
+            time_dis = (time_dis + time_z)/(n_times)
+            time_kde = (time_kde + time_z)/(n_times)
+            time_svm05 = (time_svm05 + time_z + time_scale)/(n_times)
+            time_svm01 = (time_svm01 + time_z + time_scale)/(n_times)
+            time_lof = (time_lof + time_z + time_scale)/(n_times)
+            Time = np.column_stack([time_lof, time_cen, time_dis, time_kde, time_svm05, time_svm01, time_dae])
+
+            print(Time)
+            Querytime = np.append(Querytime, Time)
+        Querytime  =  np.reshape(Querytime, (-1, 7))
+        np.savetxt(path + data +  "_query_time.csv", Querytime, delimiter=",", fmt='%f' )
+#if __name__ == '__main__':
+#    Investigate_Querytime(list_data, sizes)
+
+
+"**************************** AUCs - Training size ***************************"
+sizes = [500, 1000, 2000, 5000, 10000]
+list_data =  ["CTU13_08", "CTU13_09", "CTU13_13", "UNSW", "NSLKDD"]
+list_name =  ["CTU13-08", "CTU13-09", "CTU13-13", "UNSW-NB15", "NSL-KDD"]
+def Investigate_Sizes(list_data, sizes):
+    norm         = "maxabs"                 #standard, maxabs[-1,1] or minmax[0,1]
+    corruptions  = [0.1, 0.1, 0.1]
+
+    print ("SAE 10")
+    print ("+ Data: ", list_data)
+    print ("+ Scaler: ", norm)
+    print ("+ Corruptions: ", corruptions)
+
+    num = 0
+    for data in list_data:
+        num = num + 1
+        h_sizes = hyper_parameters(data)                   #Load hyper-parameters
+        AUC_Hidden = np.empty([0,10])     #store auc of all hidden data
+        train_set, test_set, actual = load_data(data)      #load original data
+        for size in sizes:
+
+            train_set1 = train_set[:size]
+            train_X, test_X = normalize_data(train_set1, test_set, norm)  #Normalize data
+            train_X = theano.shared(numpy.asarray(train_X, dtype=theano.config.floatX), borrow=True)
+            test_X  = theano.shared(numpy.asarray(test_X,  dtype=theano.config.floatX), borrow=True)
+
+            datasets = [(train_X), (test_X), (actual)]          #Pack data for training AE
+
+            in_dim   = train_set1.shape[1]                       #dimension of input data
+            n_vali   = (int)(train_set1.shape[0]/5)              #size of validation set
+            n_train  = len(train_set1) - n_vali                  #size of training set
+            #batch    = 80 #int(n_train/20)                          #Training set will be split training set into 20 batches
+
+            pat, val, batch, n_batch = stopping_para_shrink_same_batch(n_train)
+
+            print ("\n" + str(num) + ".", data, "..." )
+            print (" + Hidden Sizes: ",in_dim, h_sizes, "- Batch_sizes:", batch)
+            print (" + Data: %d (%d train, %d vali) - %d normal, %d anomaly"\
+                %(len(train_set1), n_train, n_vali, \
+                len(test_set[(actual == 1)]), len(test_set[(actual == 0)])))
+
+            print(" + Patience: %5.0d, Validate: %5.0d,  \n + Batch size: %5.0d, n batch:%5.0d"\
+             %(pat, val, batch, n_batch))
+
+            AUC_RE   = np.empty([0,10])
+
+                               #adadelta, 'adagrad' 'adam''esgd' 'nag''rmsprop' 'rprop' 'sgd'
+            #if (num==1):
+            sda, re = test_SdA(pre_lr       = 1e-2,              #re = [stop_ep, vm, tm]
+                            end2end_lr   = 1e-4,
+                            algo         = 'adadelta',
+                            dataset      = datasets,
+                            data_name    = data,
+                            n_validate   = n_vali,
+                            norm         = norm,
+                            batch_size   = batch,
+                            hidden_sizes = h_sizes,
+                            corruptions  = corruptions,
+                            patience     = pat,
+                            validation   = val)
+
+            #Computer AUC on hidden data
+            lof,cen,dis,kde,svm05,svm01,ae  = sda.Compute_AUC_Hidden(train_X, test_X, actual, norm, data)
+            auc_hidden = np.column_stack([batch, re[0], lof, cen, dis, kde, svm05, svm01, ae , 100*re[2]])
+
+            sda.Save_Hidden_Data_Size(train_X, test_X, data, size, path)
+            #Display for saving to document
+            AUC_RE   = np.append(AUC_RE, auc_hidden)
+            AUC_RE   = np.reshape(AUC_RE,(-1,10))
+
+            np.set_printoptions(precision=3, suppress=True)
+            column_list = [2,3,4,5,6,7,8,9]
+            print (AUC_RE[:,column_list])
+
+            AUC_Hidden = np.append(AUC_Hidden, auc_hidden)
+
+        AUC_Hidden  =  np.reshape(AUC_Hidden, (-1, 10))
+
+        #auc_size = AUC_Hidden[:, [2,3,4,5,6,7,8]]
+        #plot_auc_size_z(auc_size, data, sizes, path)
+
+        #save AUC on input, hidden, and diffent between them to files
+        np.savetxt(path + data +  "_AUC_Hidden.csv", AUC_Hidden, delimiter=",", fmt='%f' )
+
+#if __name__ == '__main__':
+#    Investigate_Sizes(list_data, sizes)
+
+"********************** AUCs - Training size on original **********************"
+#def Investigate_Sizes_original(list_data, sizes):
+#    norm         = "maxabs"                 #standard, maxabs[-1,1] or minmax[0,1]
+#    print ("Stand alone")
+#    print ("+ Data: ", list_data)
+#    print ("+ Scaler: ", norm)
+#
+#    num = 0
+#    for data in list_data:
+#        num = num + 1
+#        AUC_Hidden = np.empty([0,10])     #store auc of all hidden data
+#        train_set, test_set, actual = load_data(data)      #load original data
+#        for size in sizes:
+#
+#            train_set1 = train_set[:size]
+#            train_X = train_set1
+#            test_X  = test_set
+#
+#            print ("\n" + str(num) + ".", data, "..." )
+#            print (" + Data: %d - %d normal, %d anomaly"\
+#                %(len(train_set1), len(test_set[(actual == 1)]), len(test_set[(actual == 0)])))
+#
+#
+#            AUC_RE   = np.empty([0,10])
+#
+#
+#            #Computer AUC on hidden data
+#            lof,cen,dis,kde,svm05,svm01  = auc_density(train_X, test_X, actual, norm)
+#            auc_hidden = np.column_stack([0, 0, lof, cen, dis, kde, svm05, svm01, 0 , 0])
+#
+#            #Display for saving to document
+#            AUC_RE   = np.append(AUC_RE, auc_hidden)
+#            AUC_RE   = np.reshape(AUC_RE,(-1,10))
+#
+#            np.set_printoptions(precision=3, suppress=True)
+#            column_list = [2,3,4,5,6,7,8,9]
+#            print (AUC_RE[:,column_list])
+#
+#            AUC_Hidden = np.append(AUC_Hidden, auc_hidden)
+#
+#        AUC_Hidden  =  np.reshape(AUC_Hidden, (-1, 10))
+#
+#        #auc_size = AUC_Hidden[:, [2,3,4,5,6,7,8]]
+#        #plot_auc_size_z(auc_size, data, sizes, path)
+#
+#        #save AUC on input, hidden, and diffent between them to files
+#        np.savetxt(path + data +  "_AUC_Hidden.csv", AUC_Hidden, delimiter=",", fmt='%f' )
+#
+#if __name__ == '__main__':
+#    Investigate_Sizes_original(list_data, sizes)
+
+
+list_data =  ["CTU13_08", "CTU13_09", "CTU13_13", "UNSW", "NSLKDD"]
+list_name =  ["CTU13-08", "CTU13-09", "CTU13-13", "UNSW-NB15", "NSL-KDD"]
+
+
+"Plotting AUC versus size of training data - Hidden data"
+def draw_auc_size(list_data, list_name, sizes):
+    path = "D:/Python_code/SDA-02/Results/Exp_Hidden/Same_Batch_Size_Shrink_5k/Sizetoclassifier/"
+    for data, name in zip(list_data, list_name):
+        d0 = np.genfromtxt(path + data +  "_AUC_Hidden.csv", delimiter=",")
+        auc_size = d0
+        plot_auc_size_2(auc_size, data, name, sizes, "SAE", path)
+
+"Plotting AUC versus size of training data - Original data"
+def draw_auc_size_original(list_data, list_name,  sizes):
+    path = "D:/Python_code/SDA-02/Results/Exp_Hidden/Same_Batch_Size_OCC/Sizetoclassifier/"
+    for data, name in zip(list_data,list_name):
+        d0 = np.genfromtxt(path + data +  "_AUC_Hidden.csv", delimiter=",")
+        auc_size = d0
+        plot_auc_size_2(auc_size, data, name, sizes, "     ", path)
+
+#draw_auc_size_original(list_data, list_name, sizes)
+#draw_auc_size(list_data, list_name, sizes)
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
