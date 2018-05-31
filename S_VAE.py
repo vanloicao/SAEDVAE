@@ -139,13 +139,10 @@ class SdA(object):
         z_var = self.encoder[-1].output
         z     = self.decoder[-1].output
 
-        self.alpha = 1.0
-        self.lamda = 1.0
 
         self.recon = (((self.x - z)**2).mean(1)).mean()
-
-        alpha = self.alpha
-        self.KL    = T.mean((0.5/alpha)*T.mean(T.exp(z_var) + z_mu**2 - alpha - alpha * z_var + alpha*T.log(alpha), 1))
+        
+        self.KL    = T.mean((0.5)*T.mean(T.exp(z_var) + z_mu**2 - 1 - z_var, 1))
         
         self.end2end_cost = self.recon + self.KL        
 
@@ -154,19 +151,8 @@ class SdA(object):
         eps = self.rng.normal(mu.shape, 0.0, 1.0 , dtype = theano.config.floatX)
         sample_z = mu + T.exp(log_var / 2) * eps
         return sample_z
-
-    "********************** Compute KL and Recon Loss *************************"
-#    def Recon_KL_Loss(self, data_set):
-#        data_size = data_set.get_value().shape[0]
-#        index = T.lscalar('index')
-#        KL1 = self.lamda*T.log10(self.KL+1)
-#        Loss = theano.function([index],
-#                               outputs = [self.recon, KL1],
-#                               givens={self.x: data_set[index : data_size]})
-#        return Loss(0)
-
-
-
+    
+    
     def Recon_KL_loss_batch(self, train_x, batch_size):
 
         index = T.lscalar('index')
@@ -248,11 +234,7 @@ class SdA(object):
         mu, logvar = self.get_mu_logvar(train_set)
 
         np.savetxt(path + "Visualize_histogram/" + "z_train_" + str(epoch) + "_" + str(self.alpha)+".csv", z_train, delimiter=",", fmt='%f' )
-#        np.savetxt(path + "Visualize_histogram/" + "z_mu" + str(epoch) + ".csv",  mu, delimiter=",", fmt='%f' )
-#        np.savetxt(path + "Visualize_histogram/" + "z_var" + str(epoch) + ".csv", np.exp(logvar), delimiter=",", fmt='%f' )
 
-#        histogram_z(mu[:,0],             'mu' , self.alpha, epoch, path)
-#        histogram_z(np.exp(logvar[:,0]), 'var', self.alpha, epoch, path)
         histogram_z(z_train[:,0],        'z'  , self.alpha, epoch, path)
 
     "********************* Compute AUC on hidden data *************************"
@@ -280,8 +262,6 @@ class SdA(object):
         valid_x = train_X.get_value()[:n_validate]
         train_x = train_X.get_value()[n_validate:]
         "for compute tm and vm before optimization process"
-#        t = theano.shared(numpy.asarray(train_x, dtype=theano.config.floatX), borrow=True)
-#        v = theano.shared(numpy.asarray(valid_x, dtype=theano.config.floatX), borrow=True)
 
         "Training network by downhill"
         #'adadelta' 'adagrad (default 0.01)' 'adam''esgd' 'nag''rmsprop' 'rprop' 'sgd'
@@ -292,20 +272,6 @@ class SdA(object):
         "***** Monitor before optimization *****"
         stop_ep = 0
         RE = np.empty([0,3])
-#        monitor = np.empty([0,8])
-#        LOSS = np.empty([0,3])
-#        self.Plot_histogram_z(train_X, test_X, actual, 0, path)
-                                    #AUC before optimization
-#        lof,cen,dis,kde,svm05,svm01,ae = self.Compute_AUC_Hidden(train_X, test_X, actual, norm, data_name)
-#        a = np.column_stack([0, lof, cen, dis, kde, svm05, svm01, ae])
-#        monitor = np.append(monitor, a)
-                                    #Loss components before optimization
-
-#        loss = self.Recon_KL_Loss(t, batch_size)
-#        LOSS = np.append(LOSS,[stop_ep, loss[0], loss[1]])
-                                    #Error before optimization
-#        tm, vm = self.Loss_train_valid(t, v)
-#        RE = np.append(RE, np.column_stack([stop_ep, vm, tm]))
 
         for tm, vm in opt.iterate(train,                     # 5, 5, 1e-2, 0.9
                                   valid,
@@ -316,30 +282,12 @@ class SdA(object):
                                   momentum = 0.0,
                                   nesterov = False):
             stop_ep = stop_ep+1
-#            loss = self.Recon_KL_Loss(t, batch_size)
-#            LOSS = np.append(LOSS,[stop_ep, loss[0], loss[1]])
-#            "******* Monitor optimization ******"
-#            if ((stop_ep%200 == 0 ) and (stop_ep > 0)):
-#                #self.Plot_histogram_z(train_X, test_X, actual, stop_ep, path)
-#                lof,cen,dis,kde,svm05,svm01,ae = self.Compute_AUC_Hidden(train_X, test_X, actual, norm, data_name)
-#                a = np.column_stack([stop_ep, lof, cen, dis, kde, svm05, svm01, ae])
-#
-#            monitor = np.append(monitor, a)
+
             re = np.column_stack([stop_ep, vm['loss'], tm['loss']])
             RE = np.append(RE, re)
 
             if (stop_ep >= 1000):
                 break
-
-        #Plotting AUC and save to csv file
-#        monitor = np.reshape(monitor, (-1,8))
-#        Plotting_Monitor(monitor, 0.4, 1.0, data_name, path)
-#        np.savetxt(path + data_name + "_monitor_auc1.csv", monitor, delimiter=",", fmt='%f' )
-
-
-#        LOSS = np.reshape(LOSS, (-1,3))
-#        Plotting_Loss_Component(LOSS, RE, 0.0, 0.5, data_name, path)
-#        np.savetxt(path + data_name + "_loss_component.csv", LOSS, delimiter=",", fmt='%f' )
 
         RE = np.reshape(RE, (-1,3))
         Plotting_End2End_RE(RE, stop_ep, 0.0, 0.4, data_name, path)
@@ -380,12 +328,9 @@ def Main_Test():
     list_data =  ["PageBlocks", "WPBC", "PenDigits", "GLASS", "Shuttle", "Arrhythmia",\
                  "CTU13_10", "CTU13_08","CTU13_09","CTU13_13",\
                  "Spambase", "UNSW", "NSLKDD", "InternetAds"]
-
-    list_data = ["CTU13_10"]
     
     norm         = "maxabs"           
 
-    print ("+ VAE: 0.05, Group")
     print ("+ Data: ", list_data)
     print ("+ Scaler: ", norm)
 
@@ -438,21 +383,8 @@ def Main_Test():
         auc_hidden = np.column_stack([batch, re[0], lof, cen, dis, kde, svm05, svm01, ae , 100*re[2]])
         AUC_Hidden = np.append(AUC_Hidden, auc_hidden)
 
-        #compute standard deviation of z
-        #sda.Compute_Std(train_X, test_X, actual, data, path)
-        #save hidden data to files
         sda.Save_Hidden_Data(train_X, test_X, data, path)
 
-        #store AUC_input AUC_hidden and RE to AUC_RE for each data
-#        AUC_RE   = np.append(AUC_RE, auc_hidden)
-#        AUC_RE   = np.reshape(AUC_RE,(-1,10))
-#
-#        print("\n+ AUC input, AUC hidden:")
-#        np.set_printoptions(precision=3, suppress=True)
-#        column_list = [2,3,4,5,6,7,8,9]
-#        print (AUC_RE[:,column_list])
-#
-#        AUC_Hidden = np.append(AUC_Hidden, auc_hidden)
         AUC_Hidden  =  np.reshape(AUC_Hidden, (-1, 10))
         np.set_printoptions(precision=3, suppress=True)
         column_list = [2,3,4,5,6,7,8,9]
@@ -465,10 +397,6 @@ def Main_Test():
     column_list = [2,3,4,5,6,7,8,9]
     print("    LOF    CEN    MDIS   KDE   SVM5    SVM1    AE    RE*100")
     print (AUC_Hidden[:,column_list])
-
-#    #store AUC_input and AUC_hidden to AUC_Input, AUC_Hidden
-#    AUC_Hidden  =  np.reshape(AUC_Hidden, (-1, 10))
-#    np.savetxt(path +  "AUC_Hidden.csv", AUC_Hidden, delimiter=",", fmt='%f' )
 
 
 if __name__ == '__main__':
