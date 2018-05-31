@@ -9,4 +9,4 @@ Theano
 
 Downhill 0.3.0
 
-The file S_DAE.py, S_VAE.py, S_ShrinkAE.py and S_DVAE.py contain the main experiments.
+We are reorganizing/cleaning the implementation. The completed code will be available soon.
