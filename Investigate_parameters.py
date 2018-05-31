@@ -50,57 +50,6 @@ def Investigate_lof(train_set, test_set, actual, scale, k):
 
 
 
-"""
-def plotting_contour(data, bw):
-    path1 =  "D:/Python_code/SDA-02/Results/Exp_Hidden/Visualize_Hidden_Shrink/" 
-    train_set = np.genfromtxt(path1 + data + "_train_hidden.csv", delimiter=",")
-    test_set  = np.genfromtxt(path1 + data + "_test_hidden.csv", delimiter=",")
-    _, _, actual = load_data(data)
-    train_set, test_set = normalize_data(train_set, test_set, "standard")
-    test_X = test_set[actual == 1]
-    test_Y = test_set[actual == 0]    
-    normalize_data     
-    
-    KDE = DensityBasedOneClassClassifier(bandwidth = bw, 
-                                         kernel="gaussian", 
-                                         metric="euclidean",
-                                         scale = "maxabs")
-    KDE.fit(train_set)
-    predic_T = KDE.get_density(train_set)
-    predic_X = KDE.get_density(test_X)
-    predic_Y = KDE.get_density(test_Y)
-    
-    xx, yy = np.meshgrid(np.linspace(-10, 10, 500), np.linspace(-10, 10, 500))
-    # plot the line, the points, and the nearest vectors to the plane
-    Z = KDE.get_density(np.c_[xx.ravel(), yy.ravel()])
-    Z = Z.reshape(xx.shape)    
-    
-    plt.figure(figsize=(8,8)) 
-    plt.title("Novelty Detection")
-    plt.contourf(xx, yy, Z, levels=np.linspace(Z.min(), 0, 7), cmap=plt.cm.PuBu)
-    a = plt.contour(xx, yy, Z, levels=[1], linewidths=2, colors='darkred')
-    plt.contourf(xx, yy, Z, levels=[1, Z.max()], colors='palevioletred')
-   
-    s = 40
-    b1 = plt.scatter(train_set[:, 0], train_set[:, 1], c='white', s=s)
-    b2 = plt.scatter(test_X[:, 0], test_X[:, 1], c='blueviolet', s=s)
-    c = plt.scatter(test_Y[:, 0], test_Y[:, 1], c='gold', s=s)        
-    
-    plt.axis('tight')
-    plt.xlim((-10.0, 10.0))
-    plt.ylim((-10.0, 10.0))
-    plt.legend([a.collections[0], b1, b2, c],
-           ["learned frontier", "Train_X",
-            "Normal", "Anomaly"],
-           loc="upper left",
-           prop=matplotlib.font_manager.FontProperties(size=11))    
-    
-    plt.show()
-
-for bw in [0.1, 1.0, 2.0]:    
-    plotting_contour("Spambase", bw)    
-"""    
- 
 "************ Investigate SVM and KDE with many bandwidth values *************"    
 def investigate_bandwidth(norm, data, method, path):
     for m in method:
