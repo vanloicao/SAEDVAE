@@ -8,4 +8,4 @@ Downhill 0.3.2
 
 We are reorganizing/cleaning the implementation. The completed code will be available soon.
 
-#NOTEBOOK: We implemented SAE on tensorflow, please see the jupyternotebook.
+# NOTEBOOK: We implemented SAE on tensorflow, please see the jupyternotebook.
